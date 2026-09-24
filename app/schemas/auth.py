@@ -3,16 +3,36 @@ from typing import Literal
 from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
-from app.utils.email_validator import (
-    KNOWN_EMAIL_PROVIDERS,
-    validate_email_domain,
-    validate_email_format,
-    validate_email_mx_records,
+from app.utils.email_validator import validate_email_format, validate_email_mx_records
+
+PASSWORD_MIN_LENGTH = 8
+# bcrypt cannot hash more than 72 bytes.
+PASSWORD_MAX_LENGTH = 72
+
+PASSWORD_DESCRIPTION = (
+    f"{PASSWORD_MIN_LENGTH}-{PASSWORD_MAX_LENGTH} characters, and must contain "
+    "at least one letter, one number, and one symbol (any character that is "
+    "not a letter or digit, such as ! @ # $ % or _). Stored only as a bcrypt "
+    "hash, never in plain text."
 )
 
-# Kept in sync with the whitelist the validator actually enforces, so the docs
-# can never drift from the rule.
-ALLOWED_EMAIL_DOMAINS = ", ".join(sorted(KNOWN_EMAIL_PROVIDERS))
+
+def validate_password_strength(password: str) -> str:
+    if len(password) < PASSWORD_MIN_LENGTH:
+        raise ValueError(
+            f"Password must be at least {PASSWORD_MIN_LENGTH} characters long"
+        )
+    if len(password) > PASSWORD_MAX_LENGTH:
+        raise ValueError(
+            f"Password must be at most {PASSWORD_MAX_LENGTH} characters long"
+        )
+    if not any(char.isalpha() for char in password):
+        raise ValueError("Password must contain at least one letter")
+    if not any(char.isdigit() for char in password):
+        raise ValueError("Password must contain at least one number")
+    if not any(not char.isalnum() for char in password):
+        raise ValueError("Password must contain at least one symbol")
+    return password
 
 
 class SignUpRequest(BaseModel):
@@ -29,9 +49,9 @@ class SignUpRequest(BaseModel):
     email: str = Field(
         ...,
         description=(
-            "Must be unique, correctly formatted, and hosted on one of these "
-            f"providers: {ALLOWED_EMAIL_DOMAINS}. The domain is also checked "
-            "for live MX records, so it must be able to receive mail."
+            "Must be unique and correctly formatted. The domain is checked for "
+            "live MX records, so it has to be a real address that can receive "
+            "mail. Any domain is accepted, including company and custom ones."
         ),
         examples=["john.doe@gmail.com"],
     )
@@ -48,19 +68,20 @@ class SignUpRequest(BaseModel):
     )
     password: str = Field(
         ...,
-        max_length=72,
-        description=(
-            "Account password. Maximum 72 characters, which is the limit bcrypt "
-            "can hash. Stored only as a bcrypt hash, never in plain text."
-        ),
+        min_length=PASSWORD_MIN_LENGTH,
+        max_length=PASSWORD_MAX_LENGTH,
+        description=PASSWORD_DESCRIPTION,
         examples=["S3curePassw0rd!"],
     )
     confirm_password: str = Field(
         ...,
-        max_length=72,
         description="Must match the password field exactly.",
         examples=["S3curePassw0rd!"],
     )
+
+    @field_validator("password")
+    def check_password(cls, value: str) -> str:
+        return validate_password_strength(value)
     otp_type: Literal["email", "phone"] = Field(
         ...,
         description=(
@@ -91,10 +112,7 @@ class SignUpRequest(BaseModel):
             if not validate_email_format(email):
                 raise HTTPException(status_code=400, detail="Invalid email format.")
 
-            # Validate the email domain
-            validate_email_domain(email)
-
-            # Validate MX records for the domain
+            # Confirm the domain can actually receive mail
             domain = email.split("@")[-1]
             validate_email_mx_records(domain)
 
@@ -139,7 +157,7 @@ class ForgotPasswordRequest(BaseModel):
         ...,
         description=(
             "Email address of the account to reset. Must belong to an existing "
-            f"user and be hosted on one of: {ALLOWED_EMAIL_DOMAINS}."
+            "user."
         ),
         examples=["john.doe@gmail.com"],
     )
@@ -152,7 +170,6 @@ class ForgotPasswordRequest(BaseModel):
     def validate_email(cls, value: str):
         if not validate_email_format(value):
             raise HTTPException(status_code=400, detail="Invalid email format.")
-        validate_email_domain(value)
         domain = value.split('@')[-1]
         validate_email_mx_records(domain)
         return value
@@ -169,16 +186,20 @@ class ResetPasswordRequest(BaseModel):
     )
     new_password: str = Field(
         ...,
-        max_length=72,
-        description="The new password. Maximum 72 characters (bcrypt limit).",
+        min_length=PASSWORD_MIN_LENGTH,
+        max_length=PASSWORD_MAX_LENGTH,
+        description=PASSWORD_DESCRIPTION,
         examples=["MyN3wPassw0rd!"],
     )
     confirm_password: str = Field(
         ...,
-        max_length=72,
         description="Must match new_password exactly.",
         examples=["MyN3wPassw0rd!"],
     )
+
+    @field_validator("new_password")
+    def check_password(cls, value: str) -> str:
+        return validate_password_strength(value)
 
     model_config = ConfigDict(
         json_schema_extra={

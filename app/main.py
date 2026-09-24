@@ -96,7 +96,16 @@ app.include_router(otp.router)
 
 
 # Health Check Route
-@app.get("/", tags=["Health Check"])
+@app.get(
+    "/",
+    tags=["Health Check"],
+    summary="Check that the API is up",
+    response_description="A static ok payload.",
+)
 def health_check():
+    """
+    Liveness probe. Requires no authentication and does not touch the database,
+    so it stays fast and will keep returning ok even if the database is down.
+    """
     return {"status": "ok", "message": "API is running successfully"}
 
