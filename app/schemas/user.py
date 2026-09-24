@@ -1,7 +1,8 @@
-from pydantic import BaseModel, EmailStr, model_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
 from typing import Optional
 
-from app.utils.crypto_util import decrypt_data, encrypt_data
+from app.utils.crypto_util import encrypt_data
+
 
 class UserBase(BaseModel):
     username: str
@@ -10,29 +11,52 @@ class UserBase(BaseModel):
 
 
 class UserResponse(BaseModel):
-    id: str  # The encrypted ID sent to the client as a string
-    username: str
-    email: str
-    phone_number: Optional[str]
-    profile_picture_url: Optional[str]
-    is_verified: bool
+    id: str = Field(
+        ...,
+        description=(
+            "Encrypted user ID. Send this back when an endpoint asks for a "
+            "user_id; the raw numeric ID is never exposed."
+        ),
+        examples=["gAAAAABnV2x3k9Qd1Zr8pYcT5mNwXvLbHsJfKgRtUyIoPaSdFgHjKlZxCvBnM="],
+    )
+    username: str = Field(..., description="Display name.", examples=["john_doe"])
+    email: str = Field(..., description="Registered email address.", examples=["john.doe@gmail.com"])
+    phone_number: Optional[str] = Field(
+        None,
+        description="Registered phone number in E.164 format, if one was given.",
+        examples=["+14155552671"],
+    )
+    profile_picture_url: Optional[str] = Field(
+        None,
+        description="Avatar URL. Populated from Google for OAuth accounts.",
+        examples=["https://lh3.googleusercontent.com/a/default-user"],
+    )
+    is_verified: bool = Field(
+        ...,
+        description=(
+            "True once the account has passed OTP verification, or immediately "
+            "for accounts created through Google. Unverified accounts cannot "
+            "obtain an access token."
+        ),
+        examples=[True],
+    )
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "id": "gAAAAABnV2x3k9Qd1Zr8pYcT5mNwXvLbHsJfKgRtUyIoPaSdFgHjKlZxCvBnM=",
+                "username": "john_doe",
+                "email": "john.doe@gmail.com",
+                "phone_number": "+14155552671",
+                "profile_picture_url": None,
+                "is_verified": True,
+            }
+        }
+    )
 
     # Automatically encrypt user_id before sending the response
     @model_validator(mode="before")
     def encrypt_user_id(cls, values):
         if "id" in values:
-            print('VALUES',values)
-
-            # Encrypt the integer ID and convert to string
-            values["id"] = encrypt_data(values["id"])  # Assumed encryption returns a string
-            print('XXXXX',type(values["id"]))
-
-        return values
-
-    # Decrypt user_id when receiving data from frontend
-    @model_validator(mode="after")
-    def decrypt_user_id(cls, values):
-        if "id" in values:
-            # Decrypt the ID (it's a string here, converting back to integer as needed)
-            values["id"] = decrypt_data(values["id"])  # Assumed decryption returns an integer
+            values["id"] = encrypt_data(values["id"])
         return values

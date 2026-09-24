@@ -1,7 +1,17 @@
-from pydantic import BaseModel, Field, field_validator, model_validator
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from datetime import datetime
 
-from app.utils.crypto_util import decrypt_data, encrypt_data
+from app.utils.crypto_util import encrypt_data
+
+ENCRYPTED_ID_DESCRIPTION = (
+    "The encrypted user ID string returned by /auth/signup or by /auth/login "
+    "when the account is not yet verified. Pass it back exactly as received; "
+    "it is not the numeric database ID."
+)
+
+ENCRYPTED_ID_EXAMPLE = "gAAAAABnV2x3k9Qd1Zr8pYcT5mNwXvLbHsJfKgRtUyIoPaSdFgHjKlZxCvBnM="
 
 
 class OTPBase(BaseModel):
@@ -11,22 +21,57 @@ class OTPBase(BaseModel):
 
 
 class OTPCreate(BaseModel):
-    user_id: str = Field(..., description="The encrypted user ID returned by signup/login")
-    contact_type: str = Field(
-        "email", description="Where to send the OTP: 'email' or 'phone'"
+    user_id: str = Field(
+        ...,
+        description=ENCRYPTED_ID_DESCRIPTION,
+        examples=[ENCRYPTED_ID_EXAMPLE],
+    )
+    contact_type: Literal["email", "phone"] = Field(
+        "email",
+        description=(
+            "Delivery channel for the code. The destination is read from the "
+            "account on file, so 'email' uses the registered email and 'phone' "
+            "uses the registered phone number. Returns 400 if the account has "
+            "no value for the channel you pick."
+        ),
+        examples=["email"],
     )
 
-    @field_validator("contact_type")
-    def validate_contact_type(cls, value: str) -> str:
-        if value not in ("email", "phone"):
-            raise ValueError("contact_type must be either 'email' or 'phone'")
-        return value
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "user_id": ENCRYPTED_ID_EXAMPLE,
+                "contact_type": "email",
+            }
+        }
+    )
 
 
 class OTPVerify(BaseModel):
-    otp_code: str = Field(..., min_length=6, max_length=6, description="The OTP to verify")
-    user_id: str
+    otp_code: str = Field(
+        ...,
+        min_length=6,
+        max_length=6,
+        description=(
+            "The 6-digit numeric code from the email or SMS. Expires 5 minutes "
+            "after it was generated."
+        ),
+        examples=["483920"],
+    )
+    user_id: str = Field(
+        ...,
+        description=ENCRYPTED_ID_DESCRIPTION,
+        examples=[ENCRYPTED_ID_EXAMPLE],
+    )
 
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "otp_code": "483920",
+                "user_id": ENCRYPTED_ID_EXAMPLE,
+            }
+        }
+    )
 
 
 class OTPResponse(BaseModel):
@@ -38,17 +83,8 @@ class OTPResponse(BaseModel):
 
     @model_validator(mode="before")
     def encrypt_user_id(cls, values):
-        print('BEFORE VLAID')
         if "user_id" in values:
             values["user_id"] = encrypt_data(values["user_id"])
-        return values
-
-    @model_validator(mode="after")
-    def decrypt_user_id(cls, values):
-        print('AFTER VLAID')
-
-        if "user_id" in values:
-            values["user_id"] = decrypt_data(values["user_id"])
         return values
 
     @field_validator("expires_at", mode="before")

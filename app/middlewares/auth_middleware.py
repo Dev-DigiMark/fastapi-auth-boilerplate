@@ -9,7 +9,8 @@ class AuthMiddleware(BaseHTTPMiddleware):
             # Skip authentication for public routes and OPTIONS requests
             public_routes = [
                 '/', "/auth/login", "/auth/signup", "/auth/google",
-                "/auth/google/callback", "/docs", "/openapi.json",
+                "/auth/google/callback", "/docs", "/docs/oauth2-redirect",
+                "/redoc", "/openapi.json",
                 '/auth/forgot-password', '/auth/reset-password',
                 '/otp/verify', '/otp/generate'
             ]

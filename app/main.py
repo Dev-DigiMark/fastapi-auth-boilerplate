@@ -15,6 +15,50 @@ CORS_ORIGINS = [
     if origin.strip()
 ]
 
+API_DESCRIPTION = """
+Authentication backend with email/password signup, OTP verification, Google
+OAuth, and password reset.
+
+### Typical signup flow
+
+1. `POST /auth/signup` — creates the account and emails or texts a 6-digit code.
+   Keep the `user_id` from the response; it is encrypted, not the numeric ID.
+2. `POST /otp/verify` — send that `user_id` plus the code to activate the account.
+3. `POST /auth/login` — returns a JWT access token.
+4. Send `Authorization: Bearer <token>` on protected endpoints.
+
+Logging in before verifying does not fail — it sends a fresh code and returns
+the `user_id` again instead of a token.
+
+### Authorizing in this page
+
+Call `/auth/login`, copy the `access_token`, then click **Authorize** above and
+paste it to unlock the endpoints marked with a padlock.
+"""
+
+TAGS_METADATA = [
+    {
+        "name": "Auth",
+        "description": "Signup, login, Google OAuth, and password reset.",
+    },
+    {
+        "name": "OTP",
+        "description": (
+            "One-time codes for account verification. Codes are 6 digits and "
+            "expire after 5 minutes."
+        ),
+    },
+    {
+        "name": "Users",
+        "description": "Profile lookups. All endpoints require a bearer token.",
+    },
+    {
+        "name": "Health Check",
+        "description": "Liveness probe for uptime monitoring.",
+    },
+]
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Code to execute during application startup
@@ -25,7 +69,13 @@ async def lifespan(app: FastAPI):
     # Code to execute during application shutdown
     print("Application is shutting down...")
 
-app = FastAPI(lifespan=lifespan)
+app = FastAPI(
+    title="FastAPI Auth Boilerplate",
+    description=API_DESCRIPTION,
+    version="1.0.0",
+    openapi_tags=TAGS_METADATA,
+    lifespan=lifespan,
+)
 
 # Add CORS middleware for cross-origin requests
 app.add_middleware(
