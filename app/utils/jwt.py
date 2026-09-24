@@ -8,9 +8,15 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
-SECRET_KEY = os.environ.get("SECRET_KEY")  # Use environment variable in production
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30000
+SECRET_KEY = os.getenv("SECRET_KEY")
+
+if not SECRET_KEY:
+    raise RuntimeError(
+        "SECRET_KEY is not set. Copy .env.example to .env and fill it in."
+    )
+
+ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
 
 # HTTPBearer for handling the token
 bearer_scheme = HTTPBearer()

@@ -11,7 +11,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 '/', "/auth/login", "/auth/signup", "/auth/google",
                 "/auth/google/callback", "/docs", "/openapi.json",
                 '/auth/forgot-password', '/auth/reset-password',
-                '/otp/verify', '/otp/generate', '/users'
+                '/otp/verify', '/otp/generate'
             ]
             if request.url.path in public_routes or request.method == "OPTIONS":
                 return await call_next(request)

@@ -7,25 +7,15 @@ from app.schemas.otp import OTPCreate, OTPVerify
 router = APIRouter(prefix="/otp", tags=["OTP"])
 
 
-@router.post("/generate-manual")
-def generate_manual_otp(user_id: int, db: Session = Depends(get_db)):
-    """
-    Manually generate an OTP for testing purposes.
-    """
-    otp_service = OTPService(db)
-    contact = "example@test.com"  # Replace with a test contact if needed
-    contact_type = "email"        # Default contact type for testing
-    return otp_service.generate_and_send_otp(user_id=user_id, contact=contact, contact_type=contact_type)
-
-
 @router.post("/generate")
 def generate_otp(data: OTPCreate, db: Session = Depends(get_db)):
     """
-    Generate an OTP and send it to the user's contact.
+    Send a fresh OTP to the contact details stored on the user's account.
     """
     otp_service = OTPService(db)
-    return otp_service.generate_and_send_otp(user_id=data.user_id, contact=data.contact, contact_type=data.contact_type)
-
+    return otp_service.send_otp_to_user(
+        encrypted_user_id=data.user_id, contact_type=data.contact_type
+    )
 
 
 @router.post("/verify")

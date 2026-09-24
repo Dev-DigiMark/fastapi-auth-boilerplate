@@ -11,8 +11,16 @@ class OTPBase(BaseModel):
 
 
 class OTPCreate(BaseModel):
-    contact: str = Field(..., description="Email or phone number to send the OTP")
-    contact_type: str = Field(..., description="Type of contact, e.g., email or phone")
+    user_id: str = Field(..., description="The encrypted user ID returned by signup/login")
+    contact_type: str = Field(
+        "email", description="Where to send the OTP: 'email' or 'phone'"
+    )
+
+    @field_validator("contact_type")
+    def validate_contact_type(cls, value: str) -> str:
+        if value not in ("email", "phone"):
+            raise ValueError("contact_type must be either 'email' or 'phone'")
+        return value
 
 
 class OTPVerify(BaseModel):

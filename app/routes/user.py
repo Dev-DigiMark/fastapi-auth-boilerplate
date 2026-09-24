@@ -26,5 +26,7 @@ def get_me(current_user: dict = Depends(get_current_user), db: Session = Depends
 
 # Route to get all users (admin-only or privileged access)
 @router.get("/users", response_model=List[UserResponse])
-def get_all_users(db: Session = Depends(get_db)):
+def get_all_users(
+    current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)
+):
     return UserService.get_all_users(db=db)
