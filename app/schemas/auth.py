@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Literal, Optional
 
 from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
@@ -55,14 +55,14 @@ class SignUpRequest(BaseModel):
         ),
         examples=["john.doe@gmail.com"],
     )
-    phone_number: str = Field(
-        ...,
+    phone_number: Optional[str] = Field(
+        None,
         max_length=15,
         description=(
-            "Phone number in E.164 format: a leading '+', then country code, "
-            "then the number, with no spaces or dashes. Maximum 15 characters. "
-            "Must be unique. Required even when otp_type is 'email', and it "
-            "must be valid E.164 for SMS delivery to work."
+            "Optional. Phone number in E.164 format: a leading '+', then country "
+            "code, then the number, with no spaces or dashes. Maximum 15 "
+            "characters. Must be unique when provided. Required only when "
+            "otp_type is 'phone'."
         ),
         examples=["+14155552671"],
     )
@@ -78,25 +78,32 @@ class SignUpRequest(BaseModel):
         description="Must match the password field exactly.",
         examples=["S3curePassw0rd!"],
     )
-
-    @field_validator("password")
-    def check_password(cls, value: str) -> str:
-        return validate_password_strength(value)
     otp_type: Literal["email", "phone"] = Field(
         ...,
         description=(
             "Where to deliver the verification code. 'email' sends it to the "
-            "email above, 'phone' sends an SMS to the phone number above."
+            "email above, 'phone' sends an SMS (requires phone_number)."
         ),
         examples=["email"],
     )
+
+    @field_validator("password")
+    def check_password(cls, value: str) -> str:
+        return validate_password_strength(value)
+
+    @field_validator("phone_number")
+    def empty_phone_as_none(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        value = value.strip()
+        return value or None
 
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
                 "username": "john_doe",
                 "email": "john.doe@gmail.com",
-                "phone_number": "+14155552671",
+                "phone_number": None,
                 "password": "S3curePassw0rd!",
                 "confirm_password": "S3curePassw0rd!",
                 "otp_type": "email",
@@ -117,6 +124,12 @@ class SignUpRequest(BaseModel):
             validate_email_mx_records(domain)
 
         return values
+
+    @model_validator(mode="after")
+    def require_phone_for_sms_otp(self):
+        if self.otp_type == "phone" and not self.phone_number:
+            raise ValueError("phone_number is required when otp_type is 'phone'")
+        return self
 
 
 class LoginRequest(BaseModel):

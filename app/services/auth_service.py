@@ -118,13 +118,15 @@ class AuthService:
         return {"message": "Logged out successfully"}
 
     async def signup(self, data):
-        result = await self.db.execute(
-            select(User).where(
-                (User.email == data.email)
-                | (User.username == data.username)
-                | (User.phone_number == data.phone_number)
+        # Unique checks: only compare phone when one was provided, otherwise
+        # `phone_number IS NULL` would match every user without a phone.
+        duplicate_filters = (User.email == data.email) | (User.username == data.username)
+        if data.phone_number:
+            duplicate_filters = duplicate_filters | (
+                User.phone_number == data.phone_number
             )
-        )
+
+        result = await self.db.execute(select(User).where(duplicate_filters))
         if result.scalar_one_or_none():
             raise HTTPException(status_code=400, detail="User already exists")
 
