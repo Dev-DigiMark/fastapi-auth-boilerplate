@@ -16,7 +16,9 @@ if not SECRET_KEY:
     )
 
 ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
-ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
+# Short by design: logout only revokes the refresh token, so this is the
+# maximum window an access token can still hit protected routes after logout.
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "15"))
 
 # HTTPBearer for handling the token
 bearer_scheme = HTTPBearer()

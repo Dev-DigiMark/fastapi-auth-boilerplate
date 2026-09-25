@@ -68,7 +68,7 @@ frontend origin before deploying.
 Logging in returns an `access_token`, a `refresh_token`, and the `user` object.
 
 Send the access token as `Authorization: Bearer <token>` on protected
-endpoints. It expires after `ACCESS_TOKEN_EXPIRE_MINUTES` (default 60).
+endpoints. It expires after `ACCESS_TOKEN_EXPIRE_MINUTES` (default **15**).
 
 When it expires, `POST /auth/refresh` with the refresh token to get a new pair.
 Refresh tokens are **rotated**: the one you send is revoked and a replacement
@@ -78,9 +78,9 @@ which is what turns a stolen token into a detectable event rather than a silent
 one.
 
 `POST /auth/logout` revokes a refresh token. The matching access token stays
-valid until it expires, because JWTs are verified by signature rather than
-looked up in the database — lower `ACCESS_TOKEN_EXPIRE_MINUTES` if you need
-that window to be shorter.
+valid until it expires (at most ~15 minutes), because JWTs are verified by
+signature rather than looked up in the database. That short TTL is intentional:
+it keeps logout simple without a token denylist.
 
 Refresh tokens are stored as SHA-256 hashes in the `refresh_tokens` table, so a
 database leak does not expose usable sessions.

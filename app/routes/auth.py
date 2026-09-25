@@ -132,8 +132,8 @@ def logout(data: RefreshTokenRequest, db: Session = Depends(get_db)):
 
     Note that the matching access token keeps working until it expires — JWTs
     are validated by signature, not looked up in the database. Discard it
-    client-side and keep `ACCESS_TOKEN_EXPIRE_MINUTES` short if that gap
-    matters to you.
+    client-side; with the default 15-minute access TTL that window stays short
+    without needing a denylist.
     """
     auth_service = AuthService(db)
     return auth_service.logout(data.refresh_token)
