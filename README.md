@@ -63,13 +63,24 @@ progress.
 API. It cannot be `*` because the API sends credentials, so add your real
 frontend origin before deploying.
 
+### Password reset page
+
+Reset emails link to `PASSWORD_RESET_URL` with the token appended as
+`?token=<uuid>`. By default this points at a plain reset page the API serves
+itself at `/auth/reset-password`, so the flow works end to end without a
+frontend. The page collects the new password and posts it back to the JSON API.
+
+When you build your own page, point `PASSWORD_RESET_URL` at it and have it read
+the `token` query parameter and `POST` to `/auth/reset-password` with
+`{token, new_password, confirm_password}`. Tokens last 15 minutes and work once.
+
 ### Database (Neon)
 
 1. Create a project at [console.neon.tech](https://console.neon.tech).
 2. Open **Connect** and copy the **Pooled connection** string.
 3. Paste it into `DATABASE_URL` in `.env`.
 4. If it starts with `postgres://`, change it to `postgresql://` — SQLAlchemy
-   requires the longer form.
+  requires the longer form.
 5. Keep `?sslmode=require` on the end; Neon rejects unencrypted connections.
 
 Tables are created automatically on first startup, so there is no migration step
@@ -87,4 +98,4 @@ OR run the following to specify port number and to allow all host:
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-Interactive API docs are then at http://localhost:8000/docs.
+Interactive API docs are then at [http://localhost:8000/docs](http://localhost:8000/docs).

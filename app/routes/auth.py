@@ -1,7 +1,10 @@
 import os
+from pathlib import Path
 
 from dotenv import load_dotenv
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
+from fastapi.responses import HTMLResponse
+from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
 from app.database.db_config import get_db
@@ -21,6 +24,9 @@ load_dotenv()
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
 GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI")
+
+TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
+templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 
 @router.post(
@@ -161,6 +167,27 @@ def forgot_password(request: ForgotPasswordRequest, db: Session = Depends(get_db
     """
     auth_service = AuthService(db)
     return auth_service.forgot_password(email=request.email)
+
+
+@router.get(
+    "/reset-password",
+    response_class=HTMLResponse,
+    include_in_schema=False,
+)
+def reset_password_page(
+    request: Request,
+    token: str = Query("", description="Reset token from the emailed link."),
+):
+    """
+    Browser-facing page that the password reset email links to.
+
+    Collects the new password and posts it to this same path. Excluded from the
+    OpenAPI schema because it serves HTML rather than JSON. Replace it with your
+    own frontend page by pointing PASSWORD_RESET_URL somewhere else.
+    """
+    return templates.TemplateResponse(
+        request=request, name="reset_password.html", context={"token": token}
+    )
 
 
 @router.post(

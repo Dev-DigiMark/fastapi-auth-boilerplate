@@ -17,7 +17,11 @@ from app.services.otp_service import OTPService
 
 load_dotenv()
 
-FRONTEND_BASE_URL = os.getenv("FRONTEND_BASE_URL", "http://localhost:3000")
+# Defaults to the reset page this API serves itself. Point it at your own
+# frontend page once you have one.
+PASSWORD_RESET_URL = os.getenv(
+    "PASSWORD_RESET_URL", "http://localhost:8000/auth/reset-password"
+)
 
 
 class AuthService:
@@ -183,7 +187,7 @@ class AuthService:
         self.db.commit()
 
         # Send the reset email
-        reset_url = f"{FRONTEND_BASE_URL.rstrip('/')}/reset-password?token={reset_token}"
+        reset_url = f"{PASSWORD_RESET_URL}?token={reset_token}"
         email_content = f"""
         <p>Hello {user.username},</p>
         <p>Click the link below to reset your password:</p>
