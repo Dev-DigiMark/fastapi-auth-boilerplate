@@ -102,11 +102,16 @@ the `token` query parameter and `POST` to `/auth/reset-password` with
 2. Open **Connect** and copy the **Pooled connection** string.
 3. Paste it into `DATABASE_URL` in `.env`.
 4. If it starts with `postgres://`, change it to `postgresql://` — SQLAlchemy
-  requires the longer form.
+   requires the longer form. The app converts this to `postgresql+asyncpg://`
+   automatically for the async driver.
 5. Keep `?sslmode=require` on the end; Neon rejects unencrypted connections.
+   (It is rewritten to `ssl=require` for asyncpg at runtime.)
 
 Tables are created automatically on first startup, so there is no migration step
 to run.
+
+The API is fully async: routes, SQLAlchemy (`asyncpg`), SMTP (`aiosmtplib`),
+and HTTP calls to Google (`httpx`).
 
 ## Run Command
 

@@ -1,5 +1,6 @@
 import re
 
+import dns.asyncresolver
 import dns.exception
 import dns.resolver
 from fastapi import HTTPException
@@ -14,14 +15,35 @@ def validate_email_format(email: str) -> bool:
 
 def validate_email_mx_records(domain: str):
     """
-    Check that the domain can actually receive mail.
+    Sync MX check used by Pydantic validators (which are sync).
 
-    Transient resolver problems (timeouts, unreachable nameservers) fail open,
-    so a flaky network can't block every signup. Only a definitive answer that
-    the domain does not exist or publishes no MX records is rejected.
+    Transient resolver problems fail open so flaky DNS cannot block every signup.
     """
     try:
         answers = dns.resolver.resolve(domain, "MX")
+    except dns.resolver.NXDOMAIN:
+        raise HTTPException(
+            status_code=400, detail=f"The domain '{domain}' does not exist."
+        )
+    except (dns.resolver.NoAnswer, dns.resolver.NoMetaqueries):
+        raise HTTPException(
+            status_code=400,
+            detail=f"The domain '{domain}' cannot receive email.",
+        )
+    except dns.exception.DNSException:
+        return
+
+    if not answers:
+        raise HTTPException(
+            status_code=400,
+            detail=f"The domain '{domain}' cannot receive email.",
+        )
+
+
+async def avalidate_email_mx_records(domain: str):
+    """Async MX check for use outside Pydantic validators."""
+    try:
+        answers = await dns.asyncresolver.resolve(domain, "MX")
     except dns.resolver.NXDOMAIN:
         raise HTTPException(
             status_code=400, detail=f"The domain '{domain}' does not exist."

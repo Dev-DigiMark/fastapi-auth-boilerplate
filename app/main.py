@@ -61,13 +61,15 @@ TAGS_METADATA = [
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Code to execute during application startup
     print("Application is starting up...")
-    create_database()  # Call the function to create the database and tables
+    await create_database()
 
-    yield  # Application is running here
-    # Code to execute during application shutdown
+    yield
+
     print("Application is shutting down...")
+    from app.database.db_config import engine
+
+    await engine.dispose()
 
 app = FastAPI(
     title="FastAPI Auth Boilerplate",
@@ -102,7 +104,7 @@ app.include_router(otp.router)
     summary="Check that the API is up",
     response_description="A static ok payload.",
 )
-def health_check():
+async def health_check():
     """
     Liveness probe. Requires no authentication and does not touch the database,
     so it stays fast and will keep returning ok even if the database is down.

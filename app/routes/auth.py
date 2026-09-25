@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.db_config import get_db
 from app.schemas.auth import (
@@ -22,10 +22,6 @@ router = APIRouter(prefix="/auth", tags=["Auth"])
 
 load_dotenv()
 
-GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
-GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
-GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI")
-
 TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
@@ -38,37 +34,30 @@ templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
         400: {
             "description": (
                 "Username, email, or phone already taken; passwords do not "
-                "match; or the email domain is not accepted."
+                "match; or the email domain cannot receive mail."
             )
         },
         422: {"description": "A field failed format or length validation."},
     },
 )
-def signup(data: SignUpRequest, db: Session = Depends(get_db)):
+async def signup(data: SignUpRequest, db: AsyncSession = Depends(get_db)):
     """
     Create an account and send a 6-digit verification code.
 
     The account starts unverified and **cannot log in** until the code is
     confirmed. Take the `user_id` from this response and post it to
     `/otp/verify` along with the code.
-
-    Note that the email must be on one of the accepted provider domains and the
-    phone number must be in E.164 format (`+14155552671`) — see the field
-    descriptions below.
     """
-    auth_service = AuthService(db)
-    return auth_service.signup(data)
+    return await AuthService(db).signup(data)
 
 
 @router.post(
     "/login",
     summary="Log in with password",
     response_description="A bearer token, or a verification prompt if unverified.",
-    responses={
-        400: {"description": "Invalid credentials."},
-    },
+    responses={400: {"description": "Invalid credentials."}},
 )
-def login(data: LoginRequest, db: Session = Depends(get_db)):
+async def login(data: LoginRequest, db: AsyncSession = Depends(get_db)):
     """
     Exchange credentials for a JWT access token.
 
@@ -76,15 +65,10 @@ def login(data: LoginRequest, db: Session = Depends(get_db)):
     `username_or_email_or_phone` field.
 
     There are two possible success responses. A verified account receives
-    `access_token`, `token_type`, and a `user` object holding the profile. An
-    unverified account receives no token — a fresh OTP is sent instead and the
-    response carries `user_id` and `expires_at` so you can send the user to the
-    verify step.
-
-    Use the token as `Authorization: Bearer <token>` on protected endpoints.
+    `access_token`, `refresh_token`, `token_type`, and a `user` object. An
+    unverified account receives no token — a fresh OTP is sent instead.
     """
-    auth_service = AuthService(db)
-    return auth_service.login(
+    return await AuthService(db).login(
         username_or_email_or_phone=data.username_or_email_or_phone,
         password=data.password,
     )
@@ -103,19 +87,14 @@ def login(data: LoginRequest, db: Session = Depends(get_db)):
         },
     },
 )
-def refresh(data: RefreshTokenRequest, db: Session = Depends(get_db)):
+async def refresh(data: RefreshTokenRequest, db: AsyncSession = Depends(get_db)):
     """
     Trade a refresh token for a fresh access token.
 
     Refresh tokens are rotated: the one you send is invalidated and a new one
-    comes back in the response. **Store the new one** — reusing the old token
-    is treated as a stolen-token replay and logs the user out of every device.
-
-    No `Authorization` header is needed. The refresh token is itself the
-    credential, which is what lets this work after the access token expires.
+    comes back in the response. **Store the new one**.
     """
-    auth_service = AuthService(db)
-    return auth_service.refresh_access_token(data.refresh_token)
+    return await AuthService(db).refresh_access_token(data.refresh_token)
 
 
 @router.post(
@@ -123,20 +102,14 @@ def refresh(data: RefreshTokenRequest, db: Session = Depends(get_db)):
     summary="End the current session",
     response_description="Confirmation that the session was ended.",
 )
-def logout(data: RefreshTokenRequest, db: Session = Depends(get_db)):
+async def logout(data: RefreshTokenRequest, db: AsyncSession = Depends(get_db)):
     """
     Revoke a refresh token so it can no longer be used.
 
     Always returns success, even for a token that was already revoked or never
-    existed, so it cannot be used to probe for valid tokens.
-
-    Note that the matching access token keeps working until it expires — JWTs
-    are validated by signature, not looked up in the database. Discard it
-    client-side; with the default 15-minute access TTL that window stays short
-    without needing a denylist.
+    existed. The matching access token stays valid until it expires.
     """
-    auth_service = AuthService(db)
-    return auth_service.logout(data.refresh_token)
+    return await AuthService(db).logout(data.refresh_token)
 
 
 @router.get(
@@ -144,14 +117,8 @@ def logout(data: RefreshTokenRequest, db: Session = Depends(get_db)):
     summary="Get the Google sign-in URL",
     response_description="An object containing the URL to redirect the user to.",
 )
-def google_login():
-    """
-    Build the Google OAuth consent URL.
-
-    Redirect the browser to the returned `auth_url`. Google sends the user back
-    to your configured `GOOGLE_REDIRECT_URI` with a `code` query parameter,
-    which you then pass to `/auth/google/callback`.
-    """
+async def google_login():
+    """Build the Google OAuth consent URL."""
     return {"auth_url": GoogleAuthService.get_google_auth_url()}
 
 
@@ -160,25 +127,16 @@ def google_login():
     summary="Log in or register with a Google code",
     responses={400: {"description": "The authorization code was rejected by Google."}},
 )
-def login_or_signup_with_google(
+async def login_or_signup_with_google(
     code: str = Query(
         ...,
-        description=(
-            "The single-use authorization code from Google's redirect. Expires "
-            "quickly and cannot be reused."
-        ),
+        description="The single-use authorization code from Google's redirect.",
         examples=["4/0AeanS0b..."],
     ),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
-    """
-    Exchange a Google authorization code for an access token.
-
-    Creates the account on first use. Google accounts are trusted as verified,
-    so they skip the OTP step entirely and get a token immediately.
-    """
-    auth_service = AuthService(db)
-    return auth_service.login_or_signup_with_google(code, db)
+    """Exchange a Google authorization code for tokens and start a session."""
+    return await AuthService(db).login_or_signup_with_google(code)
 
 
 @router.get(
@@ -186,22 +144,16 @@ def login_or_signup_with_google(
     summary="Google OAuth redirect target",
     responses={400: {"description": "The authorization code was rejected by Google."}},
 )
-def google_callback(
+async def google_callback(
     code: str = Query(
         ...,
         description="Authorization code appended by Google to the redirect URI.",
         examples=["4/0AeanS0b..."],
     ),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
-    """
-    The URL Google redirects to after consent.
-
-    Does the same work as `/auth/login_or_signup_with_google`; this variant
-    exists because Google calls it with a GET.
-    """
-    auth_service = AuthService(db)
-    return auth_service.login_or_signup_with_google(code, db)
+    """Google OAuth GET callback — same work as the POST variant."""
+    return await AuthService(db).login_or_signup_with_google(code)
 
 
 @router.post(
@@ -209,15 +161,11 @@ def google_callback(
     summary="Email a password reset link",
     responses={404: {"description": "No account exists with that email."}},
 )
-def forgot_password(request: ForgotPasswordRequest, db: Session = Depends(get_db)):
-    """
-    Send a reset link to a registered email address.
-
-    The link points at your frontend (`FRONTEND_BASE_URL`) with a `token` query
-    parameter, and the token is valid for 15 minutes and single-use.
-    """
-    auth_service = AuthService(db)
-    return auth_service.forgot_password(email=request.email)
+async def forgot_password(
+    request: ForgotPasswordRequest, db: AsyncSession = Depends(get_db)
+):
+    """Send a reset link. The token is valid for 15 minutes and single-use."""
+    return await AuthService(db).forgot_password(email=request.email)
 
 
 @router.get(
@@ -225,17 +173,11 @@ def forgot_password(request: ForgotPasswordRequest, db: Session = Depends(get_db
     response_class=HTMLResponse,
     include_in_schema=False,
 )
-def reset_password_page(
+async def reset_password_page(
     request: Request,
     token: str = Query("", description="Reset token from the emailed link."),
 ):
-    """
-    Browser-facing page that the password reset email links to.
-
-    Collects the new password and posts it to this same path. Excluded from the
-    OpenAPI schema because it serves HTML rather than JSON. Replace it with your
-    own frontend page by pointing PASSWORD_RESET_URL somewhere else.
-    """
+    """Browser-facing page that the password reset email links to."""
     return templates.TemplateResponse(
         request=request, name="reset_password.html", context={"token": token}
     )
@@ -245,19 +187,17 @@ def reset_password_page(
     "/reset-password",
     summary="Set a new password using a reset token",
     responses={
-        400: {"description": "Passwords do not match, or the token is invalid or expired."},
+        400: {
+            "description": "Passwords do not match, or the token is invalid or expired."
+        },
         404: {"description": "No authentication record found for this user."},
     },
 )
-def reset_password(request: ResetPasswordRequest, db: Session = Depends(get_db)):
-    """
-    Complete a password reset.
-
-    Takes the token from the emailed link plus the new password. The token is
-    deleted on success, so each link works only once.
-    """
-    auth_service = AuthService(db)
-    return auth_service.reset_password(
+async def reset_password(
+    request: ResetPasswordRequest, db: AsyncSession = Depends(get_db)
+):
+    """Complete a password reset."""
+    return await AuthService(db).reset_password(
         token=request.token,
         new_password=request.new_password,
         confirm_password=request.confirm_password,

@@ -1,9 +1,9 @@
 import os
-import smtplib
-from datetime import datetime
 from email.mime.text import MIMEText
+from datetime import datetime
 from pathlib import Path
 
+import aiosmtplib
 from dotenv import load_dotenv
 from fastapi import HTTPException
 from jinja2 import Environment, FileSystemLoader, select_autoescape
@@ -34,7 +34,7 @@ def render_email_template(template_name: str, **context) -> str:
     )
 
 
-def send_email(to: str, subject: str, body: str):
+async def send_email(to: str, subject: str, body: str):
     if not SMTP_USERNAME or not SMTP_PASSWORD:
         raise HTTPException(
             status_code=500,
@@ -47,9 +47,13 @@ def send_email(to: str, subject: str, body: str):
     msg["To"] = to
 
     try:
-        with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
-            server.starttls()
-            server.login(SMTP_USERNAME, SMTP_PASSWORD)
-            server.sendmail(EMAIL_FROM, [to], msg.as_string())
-    except smtplib.SMTPException as e:
+        await aiosmtplib.send(
+            msg,
+            hostname=SMTP_HOST,
+            port=SMTP_PORT,
+            username=SMTP_USERNAME,
+            password=SMTP_PASSWORD,
+            start_tls=True,
+        )
+    except aiosmtplib.SMTPException as e:
         raise HTTPException(status_code=500, detail=f"Failed to send email: {str(e)}")

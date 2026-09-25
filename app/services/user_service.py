@@ -1,16 +1,15 @@
-from sqlalchemy.orm import Session
+from typing import List
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.models.user import User
 from app.schemas.user import UserResponse
-from typing import List
+
 
 class UserService:
     @staticmethod
-    def get_all_users(db: Session) -> List[UserResponse]:
-        """
-        Retrieve all users from the database.
-
-        :param db: Database session
-        :return: List of UserResponse objects
-        """
-        users = db.query(User).all()
+    async def get_all_users(db: AsyncSession) -> List[UserResponse]:
+        result = await db.execute(select(User))
+        users = result.scalars().all()
         return [UserResponse.from_user(user) for user in users]

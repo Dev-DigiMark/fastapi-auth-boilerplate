@@ -1,5 +1,7 @@
-import boto3
+import asyncio
 import os
+
+import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 from dotenv import load_dotenv
 
@@ -9,9 +11,10 @@ AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
 AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
 AWS_REGION = os.getenv("AWS_REGION", "us-east-2")
 
-def send_sms(to: str, message: str):
+
+def _send_sms_sync(to: str, message: str):
     """
-    Sends an SMS using AWS SNS.
+    Sends an SMS using AWS SNS (blocking).
     :param to: The phone number in E.164 format (e.g., "+1234567890").
     :param message: The message content.
     """
@@ -20,13 +23,14 @@ def send_sms(to: str, message: str):
             "sns",
             aws_access_key_id=AWS_ACCESS_KEY_ID,
             aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
-            region_name=AWS_REGION
+            region_name=AWS_REGION,
         )
-        response = sns_client.publish(
-            PhoneNumber=to,
-            Message=message
-        )
-        print('meesage',response.get("MessageId"))
+        response = sns_client.publish(PhoneNumber=to, Message=message)
         return {"message_id": response.get("MessageId"), "status": "success"}
     except (BotoCoreError, ClientError) as error:
         raise Exception(f"Failed to send SMS: {error}")
+
+
+async def send_sms(to: str, message: str):
+    """Async wrapper — boto3 has no native asyncio client for SNS publish."""
+    return await asyncio.to_thread(_send_sms_sync, to, message)

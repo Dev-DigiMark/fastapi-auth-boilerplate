@@ -1,8 +1,9 @@
 import os
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from dotenv import load_dotenv
-from sqlalchemy import create_engine
-from sqlalchemy.orm import declarative_base, sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.orm import declarative_base
 
 load_dotenv()
 
@@ -14,30 +15,67 @@ if not DATABASE_URL:
         "database connection string."
     )
 
+
+def to_async_database_url(url: str) -> str:
+    """
+    Convert a sync SQLAlchemy URL into an async driver URL.
+
+    Neon pooled URLs often include sslmode= / channel_binding= which asyncpg
+    does not accept — those are rewritten to ssl=require.
+    """
+    if "+asyncpg" in url or "+aiosqlite" in url:
+        return url
+
+    if url.startswith("sqlite"):
+        return url.replace("sqlite://", "sqlite+aiosqlite://", 1)
+
+    url = url.replace("postgresql+psycopg2://", "postgresql+asyncpg://", 1)
+    url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    url = url.replace("postgres://", "postgresql+asyncpg://", 1)
+
+    parts = urlsplit(url)
+    original_qs = parse_qsl(parts.query, keep_blank_values=True)
+    had_sslmode = any(k == "sslmode" for k, _ in original_qs)
+    qs = [(k, v) for k, v in original_qs if k not in ("sslmode", "channel_binding")]
+    if had_sslmode or "neon.tech" in (parts.hostname or ""):
+        if not any(k == "ssl" for k, _ in qs):
+            qs.append(("ssl", "require"))
+
+    return urlunsplit(
+        (parts.scheme, parts.netloc, parts.path, urlencode(qs), parts.fragment)
+    )
+
+
+ASYNC_DATABASE_URL = to_async_database_url(DATABASE_URL)
+
 engine_kwargs = {
-    # Neon suspends idle computes, which leaves dead connections in the pool.
     "pool_pre_ping": True,
     "pool_recycle": 300,
 }
 
-if DATABASE_URL.startswith("sqlite"):
+if ASYNC_DATABASE_URL.startswith("sqlite"):
     engine_kwargs = {"connect_args": {"check_same_thread": False}}
 
-engine = create_engine(DATABASE_URL, **engine_kwargs)
-
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+engine = create_async_engine(ASYNC_DATABASE_URL, **engine_kwargs)
+AsyncSessionLocal = async_sessionmaker(
+    bind=engine,
+    class_=AsyncSession,
+    expire_on_commit=False,
+    autocommit=False,
+    autoflush=False,
+)
 Base = declarative_base()
 
 
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+async def get_db():
+    async with AsyncSessionLocal() as db:
+        try:
+            yield db
+        finally:
+            await db.close()
 
 
-def create_database():
+async def create_database():
     # Import models so their tables are registered on Base before create_all.
     from app.models import (  # noqa: F401
         otp,
@@ -47,8 +85,11 @@ def create_database():
         user_auth,
     )
 
-    Base.metadata.create_all(bind=engine)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
 
 
 if __name__ == "__main__":
-    create_database()
+    import asyncio
+
+    asyncio.run(create_database())
