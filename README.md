@@ -63,6 +63,28 @@ progress.
 API. It cannot be `*` because the API sends credentials, so add your real
 frontend origin before deploying.
 
+### Tokens and sessions
+
+Logging in returns an `access_token`, a `refresh_token`, and the `user` object.
+
+Send the access token as `Authorization: Bearer <token>` on protected
+endpoints. It expires after `ACCESS_TOKEN_EXPIRE_MINUTES` (default 60).
+
+When it expires, `POST /auth/refresh` with the refresh token to get a new pair.
+Refresh tokens are **rotated**: the one you send is revoked and a replacement
+comes back, so your client must store the new one each time. Replaying an
+already-used token is treated as theft and revokes every session for that user,
+which is what turns a stolen token into a detectable event rather than a silent
+one.
+
+`POST /auth/logout` revokes a refresh token. The matching access token stays
+valid until it expires, because JWTs are verified by signature rather than
+looked up in the database — lower `ACCESS_TOKEN_EXPIRE_MINUTES` if you need
+that window to be shorter.
+
+Refresh tokens are stored as SHA-256 hashes in the `refresh_tokens` table, so a
+database leak does not expose usable sessions.
+
 ### Password reset page
 
 Reset emails link to `PASSWORD_RESET_URL` with the token appended as

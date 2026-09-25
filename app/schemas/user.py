@@ -60,3 +60,15 @@ class UserResponse(BaseModel):
         if "id" in values:
             values["id"] = encrypt_data(values["id"])
         return values
+
+    @classmethod
+    def from_user(cls, user) -> "UserResponse":
+        """Build the public view of a User row. The ID is encrypted on the way out."""
+        return cls(
+            id=user.id,
+            username=user.username,
+            email=user.email,
+            phone_number=user.phone_number,
+            profile_picture_url=user.profile_picture_url,
+            is_verified=user.is_verified,
+        )

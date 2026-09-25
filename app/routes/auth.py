@@ -11,6 +11,7 @@ from app.database.db_config import get_db
 from app.schemas.auth import (
     ForgotPasswordRequest,
     LoginRequest,
+    RefreshTokenRequest,
     ResetPasswordRequest,
     SignUpRequest,
 )
@@ -75,9 +76,10 @@ def login(data: LoginRequest, db: Session = Depends(get_db)):
     `username_or_email_or_phone` field.
 
     There are two possible success responses. A verified account receives
-    `{"access_token": ..., "token_type": "bearer"}`. An unverified account
-    receives no token — a fresh OTP is sent instead and the response carries
-    `user_id` and `expires_at` so you can send the user to the verify step.
+    `access_token`, `token_type`, and a `user` object holding the profile. An
+    unverified account receives no token — a fresh OTP is sent instead and the
+    response carries `user_id` and `expires_at` so you can send the user to the
+    verify step.
 
     Use the token as `Authorization: Bearer <token>` on protected endpoints.
     """
@@ -86,6 +88,55 @@ def login(data: LoginRequest, db: Session = Depends(get_db)):
         username_or_email_or_phone=data.username_or_email_or_phone,
         password=data.password,
     )
+
+
+@router.post(
+    "/refresh",
+    summary="Get a new access token",
+    response_description="A new access token and a replacement refresh token.",
+    responses={
+        401: {
+            "description": (
+                "The refresh token is unknown, expired, or was already used. "
+                "Reuse of a rotated token revokes every session for that user."
+            )
+        },
+    },
+)
+def refresh(data: RefreshTokenRequest, db: Session = Depends(get_db)):
+    """
+    Trade a refresh token for a fresh access token.
+
+    Refresh tokens are rotated: the one you send is invalidated and a new one
+    comes back in the response. **Store the new one** — reusing the old token
+    is treated as a stolen-token replay and logs the user out of every device.
+
+    No `Authorization` header is needed. The refresh token is itself the
+    credential, which is what lets this work after the access token expires.
+    """
+    auth_service = AuthService(db)
+    return auth_service.refresh_access_token(data.refresh_token)
+
+
+@router.post(
+    "/logout",
+    summary="End the current session",
+    response_description="Confirmation that the session was ended.",
+)
+def logout(data: RefreshTokenRequest, db: Session = Depends(get_db)):
+    """
+    Revoke a refresh token so it can no longer be used.
+
+    Always returns success, even for a token that was already revoked or never
+    existed, so it cannot be used to probe for valid tokens.
+
+    Note that the matching access token keeps working until it expires — JWTs
+    are validated by signature, not looked up in the database. Discard it
+    client-side and keep `ACCESS_TOKEN_EXPIRE_MINUTES` short if that gap
+    matters to you.
+    """
+    auth_service = AuthService(db)
+    return auth_service.logout(data.refresh_token)
 
 
 @router.get(

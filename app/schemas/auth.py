@@ -144,6 +144,26 @@ class LoginRequest(BaseModel):
     )
 
 
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str = Field(
+        ...,
+        description=(
+            "The refresh_token from your last login or refresh. Each one works "
+            "only once — refreshing returns a replacement that you must store "
+            "in its place."
+        ),
+        examples=["Yd3kQp1ZxR7mNvB2sT8uC4eA6gH0jL5wF9iO3rK7pX1nM2bV4cZ8qS6tY0dG"],
+    )
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "refresh_token": "Yd3kQp1ZxR7mNvB2sT8uC4eA6gH0jL5wF9iO3rK7pX1nM2bV4cZ8qS6tY0dG"
+            }
+        }
+    )
+
+
 class GoogleAuthCallback(BaseModel):
     code: str = Field(
         ...,

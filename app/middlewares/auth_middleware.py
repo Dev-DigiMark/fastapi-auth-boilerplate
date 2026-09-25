@@ -8,6 +8,10 @@ class AuthMiddleware(BaseHTTPMiddleware):
         try:
             # Skip authentication for public routes and OPTIONS requests
             public_routes = [
+                # /auth/refresh and /auth/logout authenticate with the refresh
+                # token in the body, and are reached precisely when the access
+                # token has expired.
+                '/auth/refresh', '/auth/logout',
                 '/', "/auth/login", "/auth/signup", "/auth/google",
                 "/auth/google/callback", "/docs", "/docs/oauth2-redirect",
                 "/redoc", "/openapi.json",

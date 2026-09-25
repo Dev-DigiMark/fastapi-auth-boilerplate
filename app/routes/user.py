@@ -30,14 +30,7 @@ def get_me(current_user: dict = Depends(get_current_user), db: Session = Depends
     user = db.query(User).filter(User.id == current_user["id"]).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    return UserResponse(
-        id=user.id,  # This is the integer ID from the database, it will be encrypted automatically
-        username=user.username,
-        email=user.email,
-        phone_number=user.phone_number,
-        profile_picture_url=user.profile_picture_url,
-        is_verified=user.is_verified,
-    )
+    return UserResponse.from_user(user)
 
 
 @router.get(

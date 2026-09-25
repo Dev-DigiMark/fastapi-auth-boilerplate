@@ -39,7 +39,13 @@ def get_db():
 
 def create_database():
     # Import models so their tables are registered on Base before create_all.
-    from app.models import otp, reset_token, user, user_auth  # noqa: F401
+    from app.models import (  # noqa: F401
+        otp,
+        refresh_token,
+        reset_token,
+        user,
+        user_auth,
+    )
 
     Base.metadata.create_all(bind=engine)
 

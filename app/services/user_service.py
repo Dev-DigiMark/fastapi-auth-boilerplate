@@ -2,7 +2,6 @@ from sqlalchemy.orm import Session
 from app.models.user import User
 from app.schemas.user import UserResponse
 from typing import List
-from app.utils.crypto_util import encrypt_data
 
 class UserService:
     @staticmethod
@@ -14,14 +13,4 @@ class UserService:
         :return: List of UserResponse objects
         """
         users = db.query(User).all()
-        return [
-            UserResponse(
-                id=user.id,
-                username=user.username,
-                email=user.email,
-                phone_number=user.phone_number,
-                profile_picture_url=user.profile_picture_url,
-                is_verified=user.is_verified,
-            )
-            for user in users
-        ]
+        return [UserResponse.from_user(user) for user in users]

@@ -4,15 +4,22 @@ import uuid
 from dotenv import load_dotenv
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
+from app.models.refresh_token import RefreshToken
 from app.models.reset_token import ResetToken
 from app.models.user import User
 from app.models.user_auth import UserAuth
+from app.schemas.user import UserResponse
 from app.services.google_auth_service import GoogleAuthService
 from app.services.otp_service import OTPService
 from app.utils.email_util import send_email
 from app.utils.hashing import Hash
 from app.utils.jwt import create_access_token
 from app.utils.crypto_util import encrypt_data
+from app.utils.refresh_token import (
+    generate_refresh_token,
+    hash_refresh_token,
+    refresh_token_expiry,
+)
 from app.services.otp_service import OTPService
 
 load_dotenv()
@@ -27,6 +34,96 @@ PASSWORD_RESET_URL = os.getenv(
 class AuthService:
     def __init__(self, db: Session):
         self.db = db
+
+    def _issue_refresh_token(self, user_id: int) -> str:
+        raw_token, token_hash = generate_refresh_token()
+        self.db.add(
+            RefreshToken(
+                user_id=user_id,
+                token_hash=token_hash,
+                expires_at=refresh_token_expiry(),
+            )
+        )
+        self.db.commit()
+        return raw_token
+
+    def _revoke_all_tokens_for_user(self, user_id: int):
+        self.db.query(RefreshToken).filter(
+            RefreshToken.user_id == user_id,
+            RefreshToken.revoked_at.is_(None),
+        ).update({"revoked_at": datetime.utcnow()})
+        self.db.commit()
+
+    def _session_response(self, user: User, message: str = None) -> dict:
+        """Build the payload returned whenever a new session is established."""
+        response = {
+            "access_token": create_access_token({"sub": str(user.id)}),
+            "refresh_token": self._issue_refresh_token(user.id),
+            "token_type": "bearer",
+            "user": UserResponse.from_user(user),
+        }
+        if message:
+            response = {"message": message, **response}
+        return response
+
+    def refresh_access_token(self, refresh_token: str):
+        """
+        Exchange a refresh token for a new access token.
+
+        The presented token is rotated away and replaced, so each one works
+        exactly once.
+        """
+        stored = (
+            self.db.query(RefreshToken)
+            .filter(RefreshToken.token_hash == hash_refresh_token(refresh_token))
+            .first()
+        )
+
+        if not stored:
+            raise HTTPException(status_code=401, detail="Invalid refresh token")
+
+        if stored.revoked_at is not None:
+            # This token was already rotated away, so whoever just sent it is
+            # replaying an old one. Treat it as theft and drop every session.
+            self._revoke_all_tokens_for_user(stored.user_id)
+            raise HTTPException(
+                status_code=401,
+                detail=(
+                    "Refresh token has already been used. All sessions have "
+                    "been revoked; please log in again."
+                ),
+            )
+
+        if stored.expires_at < datetime.utcnow():
+            raise HTTPException(status_code=401, detail="Refresh token has expired")
+
+        user = self.db.query(User).filter(User.id == stored.user_id).first()
+        if not user:
+            raise HTTPException(status_code=401, detail="Invalid refresh token")
+
+        stored.revoked_at = datetime.utcnow()
+        self.db.commit()
+
+        return self._session_response(user)
+
+    def logout(self, refresh_token: str):
+        """
+        Revoke a refresh token.
+
+        Always reports success so the endpoint cannot be used to probe which
+        tokens exist. The current access token stays valid until it expires,
+        because JWTs are not checked against the database.
+        """
+        stored = (
+            self.db.query(RefreshToken)
+            .filter(RefreshToken.token_hash == hash_refresh_token(refresh_token))
+            .first()
+        )
+        if stored and stored.revoked_at is None:
+            stored.revoked_at = datetime.utcnow()
+            self.db.commit()
+
+        return {"message": "Logged out successfully"}
 
     def signup(self, data):
         # Check for duplicate user
@@ -129,9 +226,8 @@ class AuthService:
                 "user_id":encrypted_user_id
             }
 
-        # If verified, generate a token
-        token = create_access_token({"sub": str(user.id)})
-        return {"access_token": token, "token_type": "bearer"}
+        # If verified, start a session
+        return self._session_response(user)
 
     def login_or_signup_with_google(self, code: str, db: Session):
         # Step 1: Exchange code for tokens
@@ -161,14 +257,8 @@ class AuthService:
             db.add(user_auth)
             db.commit()
 
-        # Step 5: Generate access token
-        access_token = create_access_token({"sub": str(user.id)})
-        return {
-            "message": "Login successful",
-            "access_token": access_token,
-            "token_type": "bearer",
-            "user": {"id": user.id, "email": user.email, "username": user.username},
-        }
+        # Step 5: Start a session
+        return self._session_response(user, message="Login successful")
     
 
 
