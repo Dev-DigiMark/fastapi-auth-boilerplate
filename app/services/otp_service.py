@@ -3,8 +3,8 @@ from sqlalchemy.orm import Session
 from fastapi import HTTPException
 from app.models.otp import OTP
 from app.models.user import User
-from app.utils.otp_util import generate_otp, otp_expiry
-from app.utils.email_util import send_email
+from app.utils.otp_util import OTP_VALIDITY_MINUTES, generate_otp, otp_expiry
+from app.utils.email_util import render_email_template, send_email
 from app.utils.sms_util import send_sms
 from app.utils.crypto_util import decrypt_data
 
@@ -67,15 +67,21 @@ class OTPService:
         # Step 4: Send OTP based on contact type
         try:
             if contact_type == "email":
-                send_email(
-                    to=contact,
-                    subject="Your OTP Code",
-                    body=f"Your OTP code is: {otp_code}. It will expire in 5 minutes."
+                user = self.db.query(User).filter(User.id == user_id).first()
+                body = render_email_template(
+                    "email_otp.html",
+                    otp_code=otp_code,
+                    valid_minutes=OTP_VALIDITY_MINUTES,
+                    username=user.username if user else None,
                 )
+                send_email(to=contact, subject="Your OTP Code", body=body)
             elif contact_type == "phone":
                 send_sms(
                     to=contact,
-                    message=f"Your OTP code is: {otp_code}. It will expire in 5 minutes."
+                    message=(
+                        f"Your OTP code is: {otp_code}. "
+                        f"It will expire in {OTP_VALIDITY_MINUTES} minutes."
+                    ),
                 )
         except Exception as e:
             # Rollback the transaction if sending OTP fails

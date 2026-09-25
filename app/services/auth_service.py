@@ -11,7 +11,7 @@ from app.models.user_auth import UserAuth
 from app.schemas.user import UserResponse
 from app.services.google_auth_service import GoogleAuthService
 from app.services.otp_service import OTPService
-from app.utils.email_util import send_email
+from app.utils.email_util import render_email_template, send_email
 from app.utils.hashing import Hash
 from app.utils.jwt import create_access_token
 from app.utils.crypto_util import encrypt_data
@@ -278,13 +278,13 @@ class AuthService:
 
         # Send the reset email
         reset_url = f"{PASSWORD_RESET_URL}?token={reset_token}"
-        email_content = f"""
-        <p>Hello {user.username},</p>
-        <p>Click the link below to reset your password:</p>
-        <a href="{reset_url}">{reset_url}</a>
-        <p>This link will expire in 15 minutes.</p>
-        """
-        send_email(to=user.email, subject="Password Reset", body=email_content)
+        email_content = render_email_template(
+            "email_reset_password.html",
+            reset_url=reset_url,
+            valid_minutes=15,
+            username=user.username,
+        )
+        send_email(to=user.email, subject="Reset Your Password", body=email_content)
 
         return {"message": "Password reset email sent"}
 
